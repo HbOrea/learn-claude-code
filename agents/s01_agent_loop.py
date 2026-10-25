@@ -38,15 +38,17 @@ try:
 except ImportError:
     pass
 
-from anthropic import Anthropic
+# from anthropic import Anthropic
+from openai import OpenAI
+
 from dotenv import load_dotenv
 
 load_dotenv(override=True)
 
-if os.getenv("ANTHROPIC_BASE_URL"):
-    os.environ.pop("ANTHROPIC_AUTH_TOKEN", None)
+if os.getenv("OPENAI_BASE_URL"):
+    os.environ.pop("OPENAI_AUTH_TOKEN", None)
 
-client = Anthropic(base_url=os.getenv("ANTHROPIC_BASE_URL"))
+client = OpenAI(base_url=os.getenv("OPENAI_BASE_URL"), api_key=os.getenv("OPENAI_API_KEY")) 
 MODEL = os.environ["MODEL_ID"]
 
 SYSTEM = f"You are a coding agent at {os.getcwd()}. Use bash to solve tasks. Act, don't explain."
@@ -60,6 +62,28 @@ TOOLS = [{
         "required": ["command"],
     },
 }]
+
+# 注意：这里的格式与 Anthropic 不同
+OPENAI_TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "bash",
+            "description": "执行 Bash 命令，返回命令输出",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": "要执行的 Bash 命令",
+                    },
+                },
+                "required": ["command"],
+                "additionalProperties": False,
+            },
+        },
+    }
+]
 
 
 def run_bash(command: str) -> str:
@@ -80,10 +104,11 @@ def run_bash(command: str) -> str:
 # -- The core pattern: a while loop that calls tools until the model stops --
 def agent_loop(messages: list):
     while True:
-        response = client.messages.create(
-            model=MODEL, system=SYSTEM, messages=messages,
-            tools=TOOLS, max_tokens=8000,
+        response  = client.chat.completions.create(
+            model=MODEL, messages=messages,
+            tools=OPENAI_TOOLS, max_tokens=8000, stream=False
         )
+        response_content = response.choices[0].message
         # Append assistant turn
         messages.append({"role": "assistant", "content": response.content})
         # If the model didn't call a tool, we're done
@@ -103,6 +128,8 @@ def agent_loop(messages: list):
 
 if __name__ == "__main__":
     history = []
+    # 注入系统提示词，兼容OPENAI
+    history.append({"role": "system", "content": SYSTEM})
     while True:
         try:
             query = input("\033[36ms01 >> \033[0m")
